@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>אפליקציית כרטיס גירוד חווייתי</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Rubik -->
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Rubik', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            min-height: 100vh;
+        }
+        .scratch-container {
+            position: relative;
+            user-select: none;
+            touch-action: none;
+        }
+        canvas {
+            cursor: pointer;
+            border-radius: 1rem;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center p-4 min-h-screen text-white">
+
+    <header class="text-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-amber-400 to-yellow-200 bg-clip-text text-transparent mb-2">
+            גלה את התמונה
+        </h1>
+        <p class="text-slate-300 text-sm md:text-base">גרדו את השטח האפור כדי לגלות את הקוד למעבר לחידה הבאה!</p>
+    </header>
+
+    <main class="w-full max-w-md bg-slate-800/80 backdrop-blur-md p-6 rounded-2xl shadow-2xl border border-slate-700 flex flex-col items-center">
+        
+        <!-- Stats / Instructions bar -->
+        <div class="flex justify-between w-full mb-4 px-2 text-sm text-slate-300">
+            <span id="scratch-progress" class="bg-slate-700 px-3 py-1 rounded-full">אחוז גירוד: 0%</span>
+            <span class="bg-indigo-600/50 text-indigo-200 px-3 py-1 rounded-full">pic.png מגיטהאב</span>
+        </div>
+
+        <!-- Scratch Card Area -->
+        <div class="scratch-container relative w-[300px] h-[300px] md:w-[350px] md:h-[350px] rounded-2xl overflow-hidden shadow-inner bg-slate-900 border-4 border-amber-500/30">
+            
+            <!-- Hidden Secret Content: Full Cover Image -->
+            <div id="secret-content" class="absolute inset-0 w-full h-full bg-slate-900">
+                <img id="prize-image" src="pic.png" alt="תמונה נסתרת" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/350x350/3b82f6/ffffff?text=pic.png+לא+נמצאה'">
+            </div>
+
+            <!-- Canvas Layer (Scratch Off Cover) -->
+            <canvas id="scratch-canvas" class="absolute inset-0 w-full h-full z-10"></canvas>
+        </div>
+
+        <!-- Hidden Code Display (Revealed only after scratching) -->
+        <div id="code-container" class="mt-6 w-full hidden text-center transition-all duration-500 transform scale-95 opacity-0">
+            <div class="bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-2 border-amber-500 p-4 rounded-2xl shadow-xl">
+                <span class="text-sm text-amber-300 block mb-1 font-medium">הקוד למעבר לחידה הבאה:</span>
+                <span id="secret-code" class="text-5xl font-black tracking-widest text-amber-400 animate-pulse">247</span>
+            </div>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="mt-6 flex gap-4 w-full">
+            <button id="reset-btn" class="flex-1 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-slate-950 font-bold py-3 px-6 rounded-xl shadow-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-95">
+                כרטיס חדש
+            </button>
+            <button id="reveal-btn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-3 px-4 rounded-xl shadow transition-all">
+                גלה הכל
+            </button>
+        </div>
+
+    </main>
+
+    <!-- Message notification box -->
+    <div id="modal-msg" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <h3 id="modal-title" class="text-2xl font-bold text-amber-400 mb-2">כל הכבוד!</h3>
+            <p id="modal-text" class="text-slate-300 mb-4">חשפת את התמונה והקוד המסתורי בהצלחה!</p>
+            <div class="text-4xl font-extrabold text-white bg-slate-900 py-3 rounded-xl mb-6 tracking-widest border border-amber-500/40">247</div>
+            <button id="modal-close" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-xl transition">אישור</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('scratch-canvas');
+        const ctx = canvas.getContext('2d');
+        const progressEl = document.getElementById('scratch-progress');
+        const resetBtn = document.getElementById('reset-btn');
+        const revealBtn = document.getElementById('reveal-btn');
+        const codeContainer = document.getElementById('code-container');
+        const modalMsg = document.getElementById('modal-msg');
+        const modalClose = document.getElementById('modal-close');
+        
+        let isDrawing = false;
+        let isCompleted = false;
+
+        // Image source matching GitHub repository file name
+        const githubImageSrc = 'pic.png';
+        document.getElementById('prize-image').src = githubImageSrc;
+
+        // Play victory sound using Web Audio API
+        function playVictorySound() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const audioCtx = new AudioContext();
+
+                const notes = [261.63, 329.63, 392.00, 523.25];
+                const noteDuration = 0.15;
+                
+                notes.forEach((freq, index) => {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    
+                    const startTime = audioCtx.currentTime + (index * noteDuration);
+                    gainNode.gain.setValueAtTime(0.3, startTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + noteDuration);
+                    
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    osc.start(startTime);
+                    osc.stop(startTime + noteDuration);
+                });
+            } catch(e) {
+                console.log('Audio not supported or blocked', e);
+            }
+        }
+
+        // Initialize Canvas size to match container layout
+        function initCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width || 350;
+            canvas.height = rect.height || 350;
+
+            // Draw scratch surface (Silver/Gray metallic gradient look)
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, '#94a3b8');
+            gradient.addColorStop(0.5, '#cbd5e1');
+            gradient.addColorStop(1, '#64748b');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Add text instructions on cover
+            ctx.fillStyle = '#334155';
+            ctx.font = 'bold 20px Rubik, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('גרד כאן לחשיפת התמונה!', canvas.width / 2, canvas.height / 2);
+            
+            isCompleted = false;
+            progressEl.textContent = 'אחוז גירוד: 0%';
+            
+            // Hide code container on reset
+            codeContainer.classList.add('hidden', 'scale-95', 'opacity-0');
+            codeContainer.classList.remove('scale-100', 'opacity-100');
+        }
+
+        // Show code container with smooth animation
+        function displaySecretCode() {
+            codeContainer.classList.remove('hidden');
+            setTimeout(() => {
+                codeContainer.classList.remove('scale-95', 'opacity-0');
+                codeContainer.classList.add('scale-100', 'opacity-100');
+            }, 50);
+        }
+
+        // Calculate scratch percentage
+        function updateProgress() {
+            if (isCompleted) return;
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            let transparentPixels = 0;
+
+            for (let i = 3; i < pixels.length; i += 4) {
+                if (pixels[i] < 128) {
+                    transparentPixels++;
+                }
+            }
+
+            const totalPixels = pixels.length / 4;
+            const percentage = Math.round((transparentPixels / totalPixels) * 100);
+            progressEl.textContent = `אחוז גירוד: ${percentage}%`;
+
+            // If user scratched more than 50%, auto reveal
+            if (percentage > 50 && !isCompleted) {
+                isCompleted = true;
+                revealAll();
+                playVictorySound();
+                displaySecretCode();
+                showModal();
+            }
+        }
+
+        // Scratch drawing function
+        function scratch(x, y) {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath();
+            ctx.arc(x, y, 25, 0, Math.PI * 2, false);
+            ctx.fill();
+        }
+
+        // Event Handlers for Mouse & Touch
+        function getPosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const pos = getPosition(e);
+            scratch(pos.x, pos.y);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const pos = getPosition(e);
+            scratch(pos.x, pos.y);
+            updateProgress();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                updateProgress();
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            isDrawing = true;
+            const pos = getPosition(e);
+            scratch(pos.x, pos.y);
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDrawing) return;
+            const pos = getPosition(e);
+            scratch(pos.x, pos.y);
+            updateProgress();
+            e.preventDefault();
+        });
+
+        window.addEventListener('touchend', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                updateProgress();
+            }
+        });
+
+        // Reveal entire canvas
+        function revealAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            progressEl.textContent = 'אחוז גירוד: 100%';
+            isCompleted = true;
+        }
+
+        revealBtn.addEventListener('click', () => {
+            if (!isCompleted) {
+                revealAll();
+                playVictorySound();
+                displaySecretCode();
+                showModal();
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            initCanvas();
+        });
+
+        function showModal() {
+            modalMsg.classList.remove('hidden');
+        }
+
+        modalClose.addEventListener('click', () => {
+            modalMsg.classList.add('hidden');
+        });
+
+        window.onload = function() {
+            initCanvas();
+        };
+    </script>
+</body>
+</html>
